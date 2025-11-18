@@ -1,0 +1,86 @@
+version: "3.9"
+
+services:
+  #
+  # 1. MIGRATOR — aplica migrations antes da API subir
+  #
+  migrator:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: meeting_migrator
+    working_dir: /app
+    volumes:
+      - ./:/app:cached
+      - ./Data:/app/Data
+    environment:
+      ConnectionStrings__DefaultConnection: "Data Source=/app/Data/meeting.db"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    command: >
+      bash -lc "
+        set -e;
+        echo 'Instalando dotnet-ef (se necessário)...';
+        dotnet tool install --global dotnet-ef --add-source https://api.nuget.org/v3/index.json || true;
+        export PATH=\"/root/.dotnet/tools:$PATH\";
+        echo 'Restaurando e construindo...';
+        dotnet restore;
+        dotnet build;
+        echo 'Aplicando migrations...';
+        dotnet ef database update --project . --verbose || (echo 'MIGRATION FAILED' && exit 1);
+        echo 'Migrations aplicadas com sucesso.';
+        sleep 1;
+      "
+    restart: "no"
+
+  #
+  # 2. API — roda imagem publicada (Dockerfile → dotnet publish)
+  #
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meeting_api
+    depends_on:
+      - migrator
+    ports:
+      - "5000:80"
+    environment:
+      ASPNETCORE_URLS: "http://+:80"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ConnectionStrings__DefaultConnection: "Data Source=/app/Data/meeting.db"
+    volumes:
+      - ./Data:/app/Data
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
+    restart: unless-stopped
+
+  #
+  # 3. API-DEV — modo desenvolvimento com hot reload (use apenas em dev)
+  #
+  api-dev:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: meeting_api_dev
+    working_dir: /app
+    depends_on:
+      - migrator
+    ports:
+      - "5001:80"
+    environment:
+      ASPNETCORE_URLS: "http://+:80"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ConnectionStrings__DefaultConnection: "Data Source=/app/Data/meeting.db"
+    volumes:
+      - ./:/app:cached
+      - ./Data:/app/Data
+    command: >
+      bash -lc "
+        echo 'Aguardando DB...';
+        for i in {1..60}; do
+          if [ -f /app/Data/meeting.db ]; then
+            echo 'DB encontrado.';
+            break;
+          fi;
+          echo 'Aguardando banco...'; sleep 1;
+        done;
+        dotnet restore;
+        dotnet watch run --project ./MeetingRoom.Api.csproj --urls http://0.0.0.0:80
+      "
+    restart: on-failure
