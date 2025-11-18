@@ -2,6 +2,10 @@
 
 Sistema completo para gerenciamento de salas de reunião, incluindo backend em **.NET 8**, frontend em **Vite + Vue/React** (dependendo do seu projeto) com deploy via **Docker** e **Nginx**, além de um processo automático de **migrations**.
 
+
+![2025-11-17-23-44-36](https://github.com/user-attachments/assets/1f7ebe06-98bb-41da-a7ca-aad5dfe74d3b)
+
+
 ---
 
 ## 🚀 Tecnologias Utilizadas
